@@ -1,0 +1,15 @@
+{
+  "lookback": 36,
+  "horizon": 24,
+  "split": "ratio",
+  "d_model": 32,
+  "layers": 4,
+  "batch_size": 16,
+  "epochs": 50,
+  "patience": 10,
+  "monitor_every": 1,
+  "probe_windows": 64,
+  "reconstruction_weight": 0.0,
+  "variance_weight": 0.0,
+  "covariance_weight": 0.0
+}
