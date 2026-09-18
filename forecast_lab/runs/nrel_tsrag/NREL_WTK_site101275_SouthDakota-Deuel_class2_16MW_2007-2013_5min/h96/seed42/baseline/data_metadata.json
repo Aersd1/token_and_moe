@@ -1,0 +1,50 @@
+{
+  "source": "/ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/data/wind_timeseries/NREL/raw_5min_dropzero1000/NREL_WTK_site101275_SouthDakota-Deuel_class2_16MW_2007-2013_5min.csv",
+  "source_rows": 511011,
+  "used_rows": 511011,
+  "features": [
+    "power"
+  ],
+  "targets": [
+    "power"
+  ],
+  "time_column": "timestamp",
+  "first_time": "2007-01-01 00:00:00+00:00",
+  "last_time": "2011-11-10 08:10:00+00:00",
+  "train_end": 306606,
+  "val_end": 408808,
+  "test_end": 511011,
+  "mean": [
+    7.924854277407903
+  ],
+  "scale": [
+    6.01619585213087
+  ],
+  "missing_cells": 0,
+  "missing_policy": "error",
+  "windows": {
+    "train": 9571,
+    "val": 3191,
+    "test": 3191
+  },
+  "boundaries": {
+    "train": {
+      "start_row": 0,
+      "end_row_exclusive": 306606,
+      "first_time": "2007-01-01 00:00:00+00:00",
+      "last_time": "2009-11-30 14:25:00+00:00"
+    },
+    "val": {
+      "start_row": 306606,
+      "end_row_exclusive": 408808,
+      "first_time": "2009-11-30 14:30:00+00:00",
+      "last_time": "2010-11-20 11:15:00+00:00"
+    },
+    "test": {
+      "start_row": 408808,
+      "end_row_exclusive": 511011,
+      "first_time": "2010-11-20 11:20:00+00:00",
+      "last_time": "2011-11-10 08:10:00+00:00"
+    }
+  }
+}

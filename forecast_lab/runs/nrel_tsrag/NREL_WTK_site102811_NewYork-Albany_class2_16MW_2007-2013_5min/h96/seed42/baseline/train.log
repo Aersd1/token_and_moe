@@ -1,0 +1,29 @@
+2026-09-18 07:37:47,093 INFO Device=cuda:0 parameters=123681 train/val/test windows={'train': 10903, 'val': 3635, 'test': 3635}
+2026-09-18 07:37:47,093 INFO Validation probes=64; raw data are not copied into the run
+2026-09-18 07:37:51,649 INFO Epoch 1 train=0.491882 val=0.406158 best=0.406158 (epoch 1)
+2026-09-18 07:37:55,659 INFO Epoch 2 train=0.422298 val=0.407467 best=0.406158 (epoch 1)
+2026-09-18 07:37:59,724 INFO Epoch 3 train=0.413266 val=0.393932 best=0.393932 (epoch 3)
+2026-09-18 07:38:03,802 INFO Epoch 4 train=0.408017 val=0.393526 best=0.393526 (epoch 4)
+2026-09-18 07:38:07,882 INFO Epoch 5 train=0.403987 val=0.398480 best=0.393526 (epoch 4)
+2026-09-18 07:38:11,838 INFO Epoch 6 train=0.402519 val=0.393664 best=0.393526 (epoch 4)
+2026-09-18 07:38:15,833 INFO Epoch 7 train=0.398625 val=0.386707 best=0.386707 (epoch 7)
+2026-09-18 07:38:19,891 INFO Epoch 8 train=0.395024 val=0.391702 best=0.386707 (epoch 7)
+2026-09-18 07:38:23,890 INFO Epoch 9 train=0.392256 val=0.394473 best=0.386707 (epoch 7)
+2026-09-18 07:38:27,998 INFO Epoch 10 train=0.392030 val=0.392392 best=0.386707 (epoch 7)
+2026-09-18 07:38:32,092 INFO Epoch 11 train=0.380387 val=0.391588 best=0.386707 (epoch 7)
+2026-09-18 07:38:36,215 INFO Epoch 12 train=0.379637 val=0.386336 best=0.386336 (epoch 12)
+2026-09-18 07:38:40,372 INFO Epoch 13 train=0.375930 val=0.396481 best=0.386336 (epoch 12)
+2026-09-18 07:38:44,358 INFO Epoch 14 train=0.374879 val=0.387302 best=0.386336 (epoch 12)
+2026-09-18 07:38:48,533 INFO Epoch 15 train=0.371234 val=0.399116 best=0.386336 (epoch 12)
+2026-09-18 07:38:52,709 INFO Epoch 16 train=0.361409 val=0.386967 best=0.386336 (epoch 12)
+2026-09-18 07:38:56,765 INFO Epoch 17 train=0.358418 val=0.383554 best=0.383554 (epoch 17)
+2026-09-18 07:39:00,791 INFO Epoch 18 train=0.355177 val=0.391255 best=0.383554 (epoch 17)
+2026-09-18 07:39:04,820 INFO Epoch 19 train=0.351715 val=0.391383 best=0.383554 (epoch 17)
+2026-09-18 07:39:08,947 INFO Epoch 20 train=0.348441 val=0.398010 best=0.383554 (epoch 17)
+2026-09-18 07:39:12,936 INFO Epoch 21 train=0.339890 val=0.399505 best=0.383554 (epoch 17)
+2026-09-18 07:39:16,891 INFO Epoch 22 train=0.336460 val=0.399778 best=0.383554 (epoch 17)
+2026-09-18 07:39:20,886 INFO Epoch 23 train=0.333286 val=0.400305 best=0.383554 (epoch 17)
+2026-09-18 07:39:24,977 INFO Epoch 24 train=0.328300 val=0.402463 best=0.383554 (epoch 17)
+2026-09-18 07:39:24,977 INFO Early stopping based only on validation MSE
+2026-09-18 07:39:25,777 INFO Checkpoint selected. Evaluating test split once.
+2026-09-18 07:39:28,727 INFO Test MSE=0.385836; offline report: /ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/windmllm_v2/token_and_moe/forecast_lab/runs/nrel_tsrag/NREL_WTK_site102811_NewYork-Albany_class2_16MW_2007-2013_5min/h96/seed42/baseline/report.html

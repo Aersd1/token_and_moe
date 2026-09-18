@@ -1,0 +1,50 @@
+{
+  "source": "/ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/data/wind_timeseries/NREL/raw_5min_dropzero1000/NREL_WTK_site10444_NewMexico-Eddy_class1_16MW_2007-2013_5min.csv",
+  "source_rows": 566142,
+  "used_rows": 566142,
+  "features": [
+    "power"
+  ],
+  "targets": [
+    "power"
+  ],
+  "time_column": "timestamp",
+  "first_time": "2007-01-01 00:00:00+00:00",
+  "last_time": "2012-05-19 18:25:00+00:00",
+  "train_end": 339685,
+  "val_end": 452913,
+  "test_end": 566142,
+  "mean": [
+    6.503832567590688
+  ],
+  "scale": [
+    5.60907041959139
+  ],
+  "missing_cells": 0,
+  "missing_policy": "error",
+  "windows": {
+    "train": 10607,
+    "val": 3538,
+    "test": 3538
+  },
+  "boundaries": {
+    "train": {
+      "start_row": 0,
+      "end_row_exclusive": 339685,
+      "first_time": "2007-01-01 00:00:00+00:00",
+      "last_time": "2010-03-25 11:00:00+00:00"
+    },
+    "val": {
+      "start_row": 339685,
+      "end_row_exclusive": 452913,
+      "first_time": "2010-03-25 11:05:00+00:00",
+      "last_time": "2011-04-22 14:40:00+00:00"
+    },
+    "test": {
+      "start_row": 452913,
+      "end_row_exclusive": 566142,
+      "first_time": "2011-04-22 14:45:00+00:00",
+      "last_time": "2012-05-19 18:25:00+00:00"
+    }
+  }
+}

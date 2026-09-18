@@ -1,0 +1,50 @@
+{
+  "source": "/ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/data/wind_timeseries/NREL/raw_5min_dropzero1000/NREL_WTK_site102811_NewYork-Albany_class2_16MW_2007-2013_5min.csv",
+  "source_rows": 582008,
+  "used_rows": 582008,
+  "features": [
+    "power"
+  ],
+  "targets": [
+    "power"
+  ],
+  "time_column": "timestamp",
+  "first_time": "2007-01-01 00:00:00+00:00",
+  "last_time": "2012-07-13 20:35:00+00:00",
+  "train_end": 349204,
+  "val_end": 465606,
+  "test_end": 582008,
+  "mean": [
+    8.116582031374376
+  ],
+  "scale": [
+    6.089606569406922
+  ],
+  "missing_cells": 0,
+  "missing_policy": "error",
+  "windows": {
+    "train": 10898,
+    "val": 3630,
+    "test": 3630
+  },
+  "boundaries": {
+    "train": {
+      "start_row": 0,
+      "end_row_exclusive": 349204,
+      "first_time": "2007-01-01 00:00:00+00:00",
+      "last_time": "2010-04-27 12:15:00+00:00"
+    },
+    "val": {
+      "start_row": 349204,
+      "end_row_exclusive": 465606,
+      "first_time": "2010-04-27 12:20:00+00:00",
+      "last_time": "2011-06-05 16:25:00+00:00"
+    },
+    "test": {
+      "start_row": 465606,
+      "end_row_exclusive": 582008,
+      "first_time": "2011-06-05 16:30:00+00:00",
+      "last_time": "2012-07-13 20:35:00+00:00"
+    }
+  }
+}

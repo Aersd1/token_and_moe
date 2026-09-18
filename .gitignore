@@ -6,6 +6,10 @@ venv/
 .env
 .env.*
 runs/
+!forecast_lab/runs/
+forecast_lab/runs/*
+!forecast_lab/runs/nrel_tsrag/
+!forecast_lab/runs/nrel_tsrag/**
 data/
 datasets/
 *.pt
@@ -13,5 +17,7 @@ datasets/
 *.csv
 *.npz
 *.npy
+!forecast_lab/runs/nrel_tsrag/**/*.pt
+!forecast_lab/runs/nrel_tsrag/**/*.csv
 .idea/
 .vscode/

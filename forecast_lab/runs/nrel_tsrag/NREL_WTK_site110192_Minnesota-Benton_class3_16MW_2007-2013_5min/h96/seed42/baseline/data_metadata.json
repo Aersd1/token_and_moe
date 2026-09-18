@@ -1,0 +1,50 @@
+{
+  "source": "/ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/data/wind_timeseries/NREL/raw_5min_dropzero1000/NREL_WTK_site110192_Minnesota-Benton_class3_16MW_2007-2013_5min.csv",
+  "source_rows": 736416,
+  "used_rows": 736416,
+  "features": [
+    "power"
+  ],
+  "targets": [
+    "power"
+  ],
+  "time_column": "timestamp",
+  "first_time": "2007-01-01 00:00:00+00:00",
+  "last_time": "2013-12-31 23:55:00+00:00",
+  "train_end": 441849,
+  "val_end": 589132,
+  "test_end": 736416,
+  "mean": [
+    7.34180698115968
+  ],
+  "scale": [
+    5.790468359703441
+  ],
+  "missing_cells": 0,
+  "missing_policy": "error",
+  "windows": {
+    "train": 13798,
+    "val": 4600,
+    "test": 4600
+  },
+  "boundaries": {
+    "train": {
+      "start_row": 0,
+      "end_row_exclusive": 441849,
+      "first_time": "2007-01-01 00:00:00+00:00",
+      "last_time": "2011-03-15 04:40:00+00:00"
+    },
+    "val": {
+      "start_row": 441849,
+      "end_row_exclusive": 589132,
+      "first_time": "2011-03-15 04:45:00+00:00",
+      "last_time": "2012-08-07 14:15:00+00:00"
+    },
+    "test": {
+      "start_row": 589132,
+      "end_row_exclusive": 736416,
+      "first_time": "2012-08-07 14:20:00+00:00",
+      "last_time": "2013-12-31 23:55:00+00:00"
+    }
+  }
+}

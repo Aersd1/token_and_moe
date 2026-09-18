@@ -1,0 +1,23 @@
+2026-09-18 07:36:28,320 INFO Device=cuda:0 parameters=106041 train/val/test windows={'train': 10905, 'val': 3637, 'test': 3637}
+2026-09-18 07:36:28,320 INFO Validation probes=64; raw data are not copied into the run
+2026-09-18 07:36:33,758 INFO Epoch 1 train=0.187357 val=0.129688 best=0.129688 (epoch 1)
+2026-09-18 07:36:37,597 INFO Epoch 2 train=0.134805 val=0.132255 best=0.129688 (epoch 1)
+2026-09-18 07:36:41,418 INFO Epoch 3 train=0.129390 val=0.123075 best=0.123075 (epoch 3)
+2026-09-18 07:36:45,242 INFO Epoch 4 train=0.126947 val=0.117242 best=0.117242 (epoch 4)
+2026-09-18 07:36:49,131 INFO Epoch 5 train=0.125276 val=0.116638 best=0.116638 (epoch 5)
+2026-09-18 07:36:53,006 INFO Epoch 6 train=0.123863 val=0.116774 best=0.116638 (epoch 5)
+2026-09-18 07:36:56,894 INFO Epoch 7 train=0.121604 val=0.119159 best=0.116638 (epoch 5)
+2026-09-18 07:37:00,942 INFO Epoch 8 train=0.121802 val=0.122595 best=0.116638 (epoch 5)
+2026-09-18 07:37:05,140 INFO Epoch 9 train=0.117394 val=0.114508 best=0.114508 (epoch 9)
+2026-09-18 07:37:09,403 INFO Epoch 10 train=0.116137 val=0.111798 best=0.111798 (epoch 10)
+2026-09-18 07:37:13,645 INFO Epoch 11 train=0.115111 val=0.111605 best=0.111605 (epoch 11)
+2026-09-18 07:37:17,684 INFO Epoch 12 train=0.114672 val=0.113904 best=0.111605 (epoch 11)
+2026-09-18 07:37:21,609 INFO Epoch 13 train=0.113465 val=0.111868 best=0.111605 (epoch 11)
+2026-09-18 07:37:25,549 INFO Epoch 14 train=0.112928 val=0.113957 best=0.111605 (epoch 11)
+2026-09-18 07:37:29,577 INFO Epoch 15 train=0.109587 val=0.114635 best=0.111605 (epoch 11)
+2026-09-18 07:37:33,545 INFO Epoch 16 train=0.108653 val=0.113212 best=0.111605 (epoch 11)
+2026-09-18 07:37:37,505 INFO Epoch 17 train=0.108182 val=0.114649 best=0.111605 (epoch 11)
+2026-09-18 07:37:41,570 INFO Epoch 18 train=0.105410 val=0.112946 best=0.111605 (epoch 11)
+2026-09-18 07:37:41,570 INFO Early stopping based only on validation MSE
+2026-09-18 07:37:42,401 INFO Checkpoint selected. Evaluating test split once.
+2026-09-18 07:37:45,859 INFO Test MSE=0.119884; offline report: /ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/windmllm_v2/token_and_moe/forecast_lab/runs/nrel_tsrag/NREL_WTK_site102811_NewYork-Albany_class2_16MW_2007-2013_5min/h24/seed42/baseline/report.html

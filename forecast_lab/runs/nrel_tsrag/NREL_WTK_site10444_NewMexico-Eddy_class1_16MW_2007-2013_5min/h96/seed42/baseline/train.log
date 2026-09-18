@@ -1,0 +1,22 @@
+2026-09-18 07:42:28,095 INFO Device=cuda:0 parameters=123681 train/val/test windows={'train': 10605, 'val': 3536, 'test': 3536}
+2026-09-18 07:42:28,095 INFO Validation probes=64; raw data are not copied into the run
+2026-09-18 07:42:32,168 INFO Epoch 1 train=0.499841 val=0.449467 best=0.449467 (epoch 1)
+2026-09-18 07:42:36,008 INFO Epoch 2 train=0.437550 val=0.483240 best=0.449467 (epoch 1)
+2026-09-18 07:42:39,926 INFO Epoch 3 train=0.432135 val=0.450680 best=0.449467 (epoch 1)
+2026-09-18 07:42:43,879 INFO Epoch 4 train=0.423604 val=0.443754 best=0.443754 (epoch 4)
+2026-09-18 07:42:47,872 INFO Epoch 5 train=0.423273 val=0.445389 best=0.443754 (epoch 4)
+2026-09-18 07:42:51,820 INFO Epoch 6 train=0.420789 val=0.438554 best=0.438554 (epoch 6)
+2026-09-18 07:42:55,758 INFO Epoch 7 train=0.416959 val=0.452510 best=0.438554 (epoch 6)
+2026-09-18 07:42:59,671 INFO Epoch 8 train=0.416180 val=0.440863 best=0.438554 (epoch 6)
+2026-09-18 07:43:03,784 INFO Epoch 9 train=0.414759 val=0.446128 best=0.438554 (epoch 6)
+2026-09-18 07:43:07,824 INFO Epoch 10 train=0.405883 val=0.437054 best=0.437054 (epoch 10)
+2026-09-18 07:43:11,631 INFO Epoch 11 train=0.403192 val=0.440191 best=0.437054 (epoch 10)
+2026-09-18 07:43:15,507 INFO Epoch 12 train=0.402160 val=0.441553 best=0.437054 (epoch 10)
+2026-09-18 07:43:19,425 INFO Epoch 13 train=0.399642 val=0.443564 best=0.437054 (epoch 10)
+2026-09-18 07:43:23,340 INFO Epoch 14 train=0.390293 val=0.438946 best=0.437054 (epoch 10)
+2026-09-18 07:43:27,336 INFO Epoch 15 train=0.388089 val=0.445155 best=0.437054 (epoch 10)
+2026-09-18 07:43:31,265 INFO Epoch 16 train=0.385459 val=0.445071 best=0.437054 (epoch 10)
+2026-09-18 07:43:35,385 INFO Epoch 17 train=0.377157 val=0.453414 best=0.437054 (epoch 10)
+2026-09-18 07:43:35,386 INFO Early stopping based only on validation MSE
+2026-09-18 07:43:36,267 INFO Checkpoint selected. Evaluating test split once.
+2026-09-18 07:43:39,165 INFO Test MSE=0.416018; offline report: /ve-remi-dmz-dmz-sh-nas01/data/de_group/ghz_11401/windmllm_v2/token_and_moe/forecast_lab/runs/nrel_tsrag/NREL_WTK_site10444_NewMexico-Eddy_class1_16MW_2007-2013_5min/h96/seed42/baseline/report.html
