@@ -17,7 +17,7 @@ from .data import load_data, probe_dataset
 from .diagnostics import run_diagnostics
 from .io import write_csv, write_json
 from .metrics import evaluate_forecasts
-from .model import ForecastEncoder, masked_mse, model_kwargs, representation_penalties
+from .model import ForecastEncoder, lead_weights, masked_mse, model_kwargs, representation_penalties
 from .report import render_report
 
 
@@ -71,7 +71,7 @@ def provenance(device):
 
 
 def save_checkpoint(path, model, cfg, bundle, epoch, score):
-    checkpoint = {"format_version": 1, "model": {k: v.detach().cpu() for k, v in model.state_dict().items()},
+    checkpoint = {"format_version": 2, "model": {k: v.detach().cpu() for k, v in model.state_dict().items()},
                   "model_kwargs": model_kwargs(cfg, bundle), "config": asdict(cfg),
                   "preprocessing": bundle.metadata, "epoch": epoch, "val_mse": score}
     temporary = Path(path).with_suffix(".tmp")
@@ -97,26 +97,33 @@ def export_evaluation(directory, metrics, examples, bundle):
     rows = []
     channels = []
     horizon_rows = []
+    range_rows = []
     for model, result in metrics.items():
         for space in ("standardized", "original"):
             values = result[space]
             rows.append({"model": model, "space": space,
                          **{k: values[k] for k in ("mse", "mae", "rmse")},
+                         **{k: values.get(k) for k in ("first_step_mse", "near_mse", "far_mse", "near_mae", "far_mae")},
+                         "near_steps": result.get("near_steps"),
                          "observed_forecast_cells": result["observed_forecast_cells"]})
             for index, channel in enumerate(bundle.targets):
                 channels.append({"model": model, "space": space, "channel": channel,
                                  "mse": values["channel_mse"][index], "mae": values["channel_mae"][index]})
             for index, mse in enumerate(values["horizon_mse"]):
                 horizon_rows.append({"model": model, "space": space, "lead": index + 1, "mse": mse})
+        if "range_audit" in result:
+            range_rows.append({"model": model, **result["range_audit"]})
     write_csv(directory / "metrics.csv", rows)
     write_csv(directory / "channel_metrics.csv", channels)
     write_csv(directory / "horizon_metrics.csv", horizon_rows)
+    write_csv(directory / "range_audit.csv", range_rows)
     prediction_rows = []
     for example in examples:
         for lead, (timestamp, actual, predicted) in enumerate(zip(example["future_time"], example["truth"], example["prediction"]), 1):
             prediction_rows.append({"origin": example["origin"], "channel": example["channel"],
                                     "lead": lead, "timestamp": timestamp,
-                                    "observed": actual, "forecast": predicted})
+                                    "observed": actual, "forecast": predicted,
+                                    "forecast_bounded": example.get("prediction_bounded", [None] * len(example["prediction"]))[lead - 1]})
     write_csv(directory / "forecast_examples.csv", prediction_rows)
 
 
@@ -155,6 +162,9 @@ def train(cfg):
         write_json(output / "probe_origins.json", {"split": "val", "origins": probe.origins.tolist(),
                                                     "spacing": cfg.probe_spacing or cfg.horizon})
         model = ForecastEncoder(**model_kwargs(cfg, bundle)).to(device)
+        parameter_count = sum(p.numel() for p in model.parameters())
+        weights = lead_weights(cfg, device)
+        state["parameter_count"] = parameter_count
         optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.learning_rate, weight_decay=cfg.weight_decay)
         scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, patience=max(1, cfg.patience // 3))
         use_amp = cfg.amp and device.type == "cuda"
@@ -168,6 +178,8 @@ def train(cfg):
         logger.info("Device=%s parameters=%d train/val/test windows=%s", device,
                     sum(p.numel() for p in model.parameters()), bundle.metadata["windows"])
         logger.info("Validation probes=%d; raw data are not copied into the run", len(probe))
+        logger.info("Mode=%s near_steps=%d near_weight=%g output_constraint=%s; selection uses RAW unweighted MSE",
+                    cfg.prediction_mode, cfg.near_steps, cfg.near_weight, cfg.output_constraint)
         if cfg.variance_weight or cfg.covariance_weight:
             if len(bundle.datasets["train"]) < 2:
                 raise ValueError("Regularization needs at least two training windows")
@@ -188,6 +200,8 @@ def train(cfg):
             start = time.perf_counter()
             model.train()
             squared_error_sum = 0.0
+            weighted_error_sum = 0.0
+            weighted_target_count = 0.0
             target_count = 0
             total_weight = 0
             sums = {"total": 0.0, "reconstruction": 0.0, "variance": 0.0, "covariance": 0.0}
@@ -196,7 +210,8 @@ def train(cfg):
                 optimizer.zero_grad(set_to_none=True)
                 with torch.autocast(device_type=device.type, dtype=torch.float16, enabled=use_amp):
                     prediction, z, reconstruction = model(x)
-                    prediction_loss = masked_mse(prediction.float(), y, mask)
+                    plain_prediction_loss = masked_mse(prediction.float(), y, mask)
+                    prediction_loss = masked_mse(prediction.float(), y, mask, weights)
                     rec_loss = (masked_mse(reconstruction.float(), x, batch["x_mask"].to(device))
                                 if reconstruction is not None else prediction_loss.new_zeros(()))
                     # Covariance must stay float32 even under mixed precision.
@@ -213,13 +228,17 @@ def train(cfg):
                 scaler.step(optimizer)
                 scaler.update()
                 observed = int(mask.sum().item())
-                squared_error_sum += float(prediction_loss.detach()) * observed
+                squared_error_sum += float(plain_prediction_loss.detach()) * observed
+                weighted_cells = float((mask * weights).sum().item())
+                weighted_error_sum += float(prediction_loss.detach()) * weighted_cells
+                weighted_target_count += weighted_cells
                 target_count += observed
                 batch_size = len(x)
                 total_weight += batch_size
                 for name, value in (("total", loss), ("reconstruction", rec_loss),
                                      ("variance", var_loss), ("covariance", cov_loss)):
                     sums[name] += float(value.detach()) * batch_size
+            training_seconds = time.perf_counter() - start
             validation, examples = evaluate_forecasts(model, loaders["val"], bundle, cfg, device, include_naive=False)
             score = validation["model"]["standardized"]["mse"]
             if not np.isfinite(score):
@@ -233,8 +252,13 @@ def train(cfg):
             else:
                 stale_epochs += 1
             row = {"epoch": epoch, "train_prediction": squared_error_sum / target_count,
+                   "train_weighted_prediction": weighted_error_sum / weighted_target_count,
                    **{f"train_{k}": v / total_weight for k, v in sums.items()},
                    "val_mse": score, "val_mae": validation["model"]["standardized"]["mae"],
+                   "val_first_step_mse": validation["model"]["standardized"]["first_step_mse"],
+                   "val_near_mse": validation["model"]["standardized"]["near_mse"],
+                   "val_far_mse": validation["model"]["standardized"]["far_mse"],
+                   "training_seconds": training_seconds,
                    "learning_rate": optimizer.param_groups[0]["lr"],
                    "epoch_seconds_before_monitor": time.perf_counter() - start}
             state["history"].append(row)
@@ -255,7 +279,7 @@ def train(cfg):
                         row["train_prediction"], score, best, best_epoch)
             if writer:
                 for key, value in row.items():
-                    if key != "epoch":
+                    if key != "epoch" and value is not None:
                         writer.add_scalar(f"training/{key}", value, epoch)
                 if state["diagnostic"]["epoch"] == epoch:
                     for key, value in state["monitor_history"][-1].items():
@@ -281,6 +305,9 @@ def train(cfg):
         state["status"] = "complete"
         summary = {"status": "complete", "config": asdict(cfg), "best_epoch": best_epoch,
                    "best_val_mse": best, "validation": val_metrics, "test": test_metrics,
+                   "selection_metric": "raw_unweighted_validation_mse", "parameter_count": parameter_count,
+                   "training_seconds": sum(row["training_seconds"] for row in state["history"]),
+                   "data_sha256": bundle.metadata["source_sha256"],
                    "diagnostic": monitor_row(selected_diagnostic), "provenance": state["provenance"]}
         write_json(output / "report_state.json", state)
         render_report(output, export_png=True)

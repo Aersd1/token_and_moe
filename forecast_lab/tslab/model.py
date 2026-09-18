@@ -1,4 +1,4 @@
-"""Fixed temporal resolution encoder; every forecast passes through its latent."""
+"""Fixed-resolution encoder with optional explicit last-value residual context."""
 import math
 
 import torch
@@ -22,8 +22,15 @@ class TemporalBlock(nn.Module):
 
 class ForecastEncoder(nn.Module):
     def __init__(self, input_channels, output_channels, lookback, horizon,
-                 d_model=64, layers=6, kernel_size=3, dropout=0.1, reconstruction=False):
+                 d_model=64, layers=6, kernel_size=3, dropout=0.1, reconstruction=False,
+                 prediction_mode="direct", target_indices=None):
         super().__init__()
+        self.prediction_mode = prediction_mode
+        self.target_indices = tuple(range(output_channels) if target_indices is None else target_indices)
+        if prediction_mode not in {"direct", "residual"}:
+            raise ValueError("Unknown prediction mode")
+        if len(self.target_indices) != output_channels or any(i < 0 or i >= input_channels for i in self.target_indices):
+            raise ValueError("target_indices must identify every output in the input feature space")
         self.input_projection = nn.Linear(input_channels, d_model)
         position = torch.arange(lookback, dtype=torch.float32).unsqueeze(1)
         frequencies = torch.exp(torch.arange(0, d_model, 2) * (-math.log(10000.0) / d_model))
@@ -44,13 +51,21 @@ class ForecastEncoder(nn.Module):
             z = block(z)
         return self.final_norm(z)  # [batch, history time, latent feature]
 
-    def predict_from_latent(self, z):
+    def context_from_input(self, x):
+        return x[:, -1:, list(self.target_indices)] if self.prediction_mode == "residual" else None
+
+    def predict_from_latent(self, z, context=None):
         h = self.time_projection(z.transpose(1, 2)).transpose(1, 2)
-        return self.output_projection(h)
+        output = self.output_projection(h)
+        if self.prediction_mode == "residual":
+            if context is None or tuple(context.shape) != (len(z), 1, output.shape[-1]):
+                raise ValueError("Residual decoding needs the matching last-target context [B,1,C_target]")
+            output = output + context
+        return output
 
     def forward(self, x):
         z = self.encode(x)
-        prediction = self.predict_from_latent(z)
+        prediction = self.predict_from_latent(z, self.context_from_input(x))
         reconstruction = self.reconstruction_head(z) if self.reconstruction_head is not None else None
         return prediction, z, reconstruction
 
@@ -59,12 +74,21 @@ def model_kwargs(cfg, bundle):
     return {"input_channels": len(bundle.features), "output_channels": len(bundle.targets),
             "lookback": cfg.lookback, "horizon": cfg.horizon, "d_model": cfg.d_model,
             "layers": cfg.layers, "kernel_size": cfg.kernel_size, "dropout": cfg.dropout,
-            "reconstruction": cfg.reconstruction_weight > 0}
+            "reconstruction": cfg.reconstruction_weight > 0,
+            "prediction_mode": cfg.prediction_mode, "target_indices": bundle.target_indices}
 
 
-def masked_mse(prediction, target, mask):
-    count = mask.sum()
-    return ((prediction - target).square() * mask).sum() / count.clamp_min(1)
+def masked_mse(prediction, target, mask, weights=None):
+    effective = mask if weights is None else mask * weights
+    # Mask BEFORE squaring, so ignored NaN/inf targets cannot pollute the loss.
+    error = torch.where(mask, prediction - target, torch.zeros_like(prediction))
+    return (error.square() * effective).sum() / effective.sum().clamp_min(1e-12)
+
+
+def lead_weights(cfg, device):
+    weights = torch.ones(1, cfg.horizon, 1, device=device, dtype=torch.float32)
+    weights[:, :min(cfg.near_steps, cfg.horizon)] = cfg.near_weight
+    return weights
 
 
 def representation_penalties(z, cfg):

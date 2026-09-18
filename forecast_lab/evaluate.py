@@ -24,6 +24,11 @@ def main():
     parser.add_argument("--batch-size", type=int)
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--diagnostics", action="store_true", help="Optional frozen probes on the selected split")
+    parser.add_argument("--output-constraint", choices=("none", "nonnegative", "bounded"),
+                        help="Evaluate extra bounded outputs, without changing the checkpoint")
+    parser.add_argument("--output-min", type=float)
+    parser.add_argument("--output-max", type=float)
+    parser.add_argument("--probe-windows", type=int)
     args = parser.parse_args()
     if args.output.exists() and any(args.output.iterdir()):
         raise FileExistsError("Evaluation output must be new or empty")
@@ -34,6 +39,9 @@ def main():
     if args.batch_size:
         cfg.batch_size = args.batch_size
     cfg.device = args.device
+    for name in ("output_constraint", "output_min", "output_max", "probe_windows"):
+        if getattr(args, name) is not None:
+            setattr(cfg, name, getattr(args, name))
     cfg.validate()
     seed_everything(cfg.seed, cfg.deterministic)
     device = select_device(cfg.device)

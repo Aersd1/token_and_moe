@@ -3,7 +3,8 @@ import numpy as np
 import torch
 from torch.utils.data import DataLoader
 
-from .metrics import MetricAccumulator
+from .constraints import constrain_standardized
+from .metrics import make_accumulator
 
 
 def _spectrum(covariance):
@@ -47,6 +48,9 @@ def representation_statistics(z, cfg):
     norms = np.linalg.norm(pooled, axis=1)
     raw_unit = pooled / np.maximum(norms[:, None], 1e-12)
     pooled_cosine = raw_unit @ raw_unit.T
+    centered_norms = np.linalg.norm(pooled_centered, axis=1)
+    centered_unit = pooled_centered / np.maximum(centered_norms[:, None], 1e-12)
+    centered_cosine = centered_unit @ centered_unit.T
     offdiag = ~np.eye(n, dtype=bool)
     feature_offdiag = ~np.eye(width, dtype=bool)
     # Temporal cosine is an oversmoothing clue, not a collapse verdict.
@@ -64,6 +68,8 @@ def representation_statistics(z, cfg):
             "pooled_eigenvalues": pooled_eigenvalues.tolist(),
             "pooled_cosine_mean": float(pooled_cosine[offdiag].mean()),
             "pooled_cosine": pooled_cosine.tolist(), "pooled_pca": coords.tolist(),
+            "centered_pooled_cosine_mean": float(centered_cosine[offdiag].mean()),
+            "centered_pooled_cosine": centered_cosine.tolist(),
             "adjacent_token_cosine": adjacent}
 
 
@@ -73,9 +79,15 @@ def run_diagnostics(model, dataset, bundle, cfg, device, epoch, split="val"):
     loader = DataLoader(dataset, batch_size=cfg.diag_batch_size, shuffle=False, num_workers=0,
                         generator=torch.Generator().manual_seed(cfg.seed + 9107))
     chunks = []
+    contexts = []
     for batch in loader:
-        chunks.append(model.encode(batch["x"].to(device)).float().cpu().numpy())
+        x = batch["x"].to(device)
+        chunks.append(model.encode(x).float().cpu().numpy())
+        context = model.context_from_input(x)
+        if context is not None:
+            contexts.append(context.float().cpu().numpy())
     z = np.concatenate(chunks, axis=0)
+    context_values = np.concatenate(contexts, axis=0) if contexts else None
     statistics = representation_statistics(z, cfg)
     rng = np.random.default_rng(cfg.seed + 9107)
     # A shuffled cycle gives a reproducible derangement (no sample maps to itself).
@@ -85,39 +97,59 @@ def run_diagnostics(model, dataset, bundle, cfg, device, epoch, split="val"):
     temporal_order = rng.permutation(z.shape[1])
     reference = z.mean(axis=0, keepdims=True)
     modes = ["normal", "zero", "probe_mean", "sample_shuffle", "time_shuffle"]
+    if context_values is not None:
+        modes += ["persistence_only", "context_shuffle", "joint_shuffle"]
     if len(z) < 2:
-        modes.remove("sample_shuffle")
-    target_scale = bundle.scale[bundle.target_indices]
+        modes = [mode for mode in modes if mode not in {"sample_shuffle", "context_shuffle", "joint_shuffle"}]
     ablations = {}
     for mode in modes:
-        accumulator = MetricAccumulator(cfg.horizon, target_scale)
+        accumulator = make_accumulator(bundle, cfg)
+        bounded_accumulator = make_accumulator(bundle, cfg) if cfg.output_constraint != "none" else None
         offset = 0
         for batch in loader:
             end = offset + len(batch["x"])
-            if mode == "normal":
+            if mode in {"normal", "context_shuffle", "persistence_only"}:
                 hidden = z[offset:end]
             elif mode == "zero":
                 hidden = np.zeros_like(z[offset:end])
             elif mode == "probe_mean":
                 hidden = np.repeat(reference, end - offset, axis=0)
-            elif mode == "sample_shuffle":
+            elif mode in {"sample_shuffle", "joint_shuffle"}:
                 hidden = z[donor[offset:end]]
             else:
                 hidden = z[offset:end, temporal_order]
-            prediction = model.predict_from_latent(torch.from_numpy(hidden.copy()).to(device))
+            context = None
+            if context_values is not None:
+                context_array = (context_values[donor[offset:end]] if mode in {"context_shuffle", "joint_shuffle"}
+                                 else context_values[offset:end])
+                context = torch.from_numpy(context_array.copy()).to(device)
+            prediction = (context.expand(-1, cfg.horizon, -1) if mode == "persistence_only"
+                          else model.predict_from_latent(torch.from_numpy(hidden.copy()).to(device), context))
             accumulator.update(prediction, batch["y"], batch["mask"])
+            if bounded_accumulator is not None:
+                bounded_accumulator.update(constrain_standardized(prediction, bundle, cfg), batch["y"], batch["mask"])
             offset = end
         ablations[mode] = accumulator.result()
+        if bounded_accumulator is not None:
+            ablations[mode]["bounded_metrics"] = bounded_accumulator.result()
     reference_mse = ablations["normal"]["standardized"]["mse"]
     for result in ablations.values():
         mse = result["standardized"]["mse"]
         result["delta_mse"] = mse - reference_mse
         result["relative_delta"] = (mse - reference_mse) / reference_mse if reference_mse > 1e-12 else None
+    notes = ["Fixed probes; evaluation mode; no gradients or parameter updates.",
+             "Targets do not overlap at default spacing; histories may overlap.",
+             "probe_mean is a diagnostic-only mean over probe inputs, not a deployable predictor.",
+             "Interventions are sensitivity checks and can shift the latent distribution.",
+             "Low rank, high cosine or low variance alone do not prove harmful collapse."]
+    if context_values is not None:
+        notes += ["Residual mode: zero/mean/sample_shuffle/time_shuffle retain the ORIGINAL sample's last-value context.",
+                  "Zero latent is NOT persistence: decoder biases still contribute a correction.",
+                  "persistence_only removes the ENTIRE learned correction including decoder biases.",
+                  "context_shuffle changes only the last-value context; joint_shuffle changes context and latent together.",
+                  "Small latent-intervention effects can indicate reliance on persistence, not necessarily latent collapse."]
     return {"epoch": epoch, "split": split, "origins": dataset.origins.tolist(),
+            "prediction_mode": model.prediction_mode,
             "probe_spacing": cfg.probe_spacing or cfg.horizon,
             "statistics": statistics, "ablations": ablations,
-            "notes": ["Fixed probes; evaluation mode; no gradients or parameter updates.",
-                      "Targets do not overlap at default spacing; histories may overlap.",
-                      "probe_mean is a diagnostic-only mean over probe inputs, not a deployable predictor.",
-                      "Interventions are sensitivity checks and can shift the latent distribution.",
-                      "Low rank, high cosine or low variance alone do not prove harmful collapse."]}
+            "notes": notes}

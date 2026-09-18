@@ -14,8 +14,10 @@ import torch
 
 from tslab.config import Config
 from tslab.data import load_data
-from tslab.diagnostics import representation_statistics
-from tslab.model import ForecastEncoder, masked_mse
+from tslab.diagnostics import representation_statistics, run_diagnostics
+from tslab.model import ForecastEncoder, masked_mse, lead_weights
+from tslab.metrics import MetricAccumulator
+from tslab.constraints import constrain_original
 
 
 class DataIntegrity(unittest.TestCase):
@@ -59,8 +61,78 @@ class DataIntegrity(unittest.TestCase):
         item = validation[int(np.flatnonzero(validation.origins == 72)[0])]
         self.assertFalse(bool(item["mask"][1, 0]))
 
+    def test_saved_scaler_rejects_changed_data_even_with_same_schema(self):
+        first = load_data(self.cfg)
+        self.frame.loc[100, "a"] = -99
+        self.frame.to_csv(self.path, index=False)
+        with self.assertRaisesRegex(ValueError, "SHA-256"):
+            load_data(self.cfg, fitted=first.metadata)
+
+    def test_residual_probes_distinguish_latent_and_persistence(self):
+        cfg = replace(self.cfg, prediction_mode="residual", probe_windows=8, diag_batch_size=8, d_model=8)
+        bundle = load_data(cfg)
+        model = ForecastEncoder(2, 2, 8, 4, d_model=8, layers=1, dropout=0.0,
+                                prediction_mode="residual", target_indices=[0, 1])
+        with torch.no_grad():
+            model.output_projection.weight.zero_()
+            model.output_projection.bias.zero_()
+        diagnostic = run_diagnostics(model, bundle.datasets["val"], bundle, cfg, torch.device("cpu"), 0)
+        modes = diagnostic["ablations"]
+        reference = modes["normal"]["standardized"]["mse"]
+        for mode in ("zero", "probe_mean", "sample_shuffle", "time_shuffle", "persistence_only"):
+            self.assertAlmostEqual(reference, modes[mode]["standardized"]["mse"], places=7)
+        self.assertNotAlmostEqual(reference, modes["context_shuffle"]["standardized"]["mse"], places=5)
+
 
 class RepresentationIntegrity(unittest.TestCase):
+    def test_legacy_constructor_defaults_to_direct(self):
+        torch.manual_seed(3)
+        old_kwargs = dict(input_channels=3, output_channels=1, lookback=8, horizon=4,
+                          d_model=8, layers=2, dropout=0.0)
+        first = ForecastEncoder(**old_kwargs).eval()
+        self.assertEqual(first.prediction_mode, "direct")
+        self.assertIsNone(first.context_from_input(torch.randn(3, 8, 3)))
+        restored = ForecastEncoder(**old_kwargs).eval()
+        restored.load_state_dict(first.state_dict(), strict=True)
+        x = torch.randn(3, 8, 3)
+        torch.testing.assert_close(first(x)[0], restored(x)[0])
+
+    def test_residual_uses_correct_target_order_and_requires_context(self):
+        model = ForecastEncoder(3, 2, 8, 4, d_model=8, layers=1, dropout=0.0,
+                                prediction_mode="residual", target_indices=[2, 0])
+        with torch.no_grad():
+            model.output_projection.weight.zero_()
+            model.output_projection.bias.zero_()
+        x = torch.randn(3, 8, 3)
+        prediction, z, _ = model(x)
+        expected = x[:, -1:, [2, 0]].expand(-1, 4, -1)
+        torch.testing.assert_close(prediction, expected)
+        with self.assertRaisesRegex(ValueError, "context"):
+            model.predict_from_latent(z)
+
+    def test_near_weighting_normalizes_by_observed_weight(self):
+        cfg = Config(horizon=2, near_steps=1, near_weight=4)
+        prediction = torch.tensor([[[1.0], [3.0]]])
+        truth = torch.zeros_like(prediction)
+        mask = torch.ones_like(prediction, dtype=torch.bool)
+        weights = lead_weights(cfg, torch.device("cpu"))
+        self.assertAlmostEqual(float(masked_mse(prediction, truth, mask, weights)), 13 / 5, places=6)
+        mask[:, 1] = False
+        truth[:, 1] = float("nan")
+        self.assertAlmostEqual(float(masked_mse(prediction, truth, mask, weights)), 1.0)
+
+    def test_bound_audit_uses_original_units_and_all_predictions(self):
+        accumulator = MetricAccumulator(3, [2.0], [8.0], near_steps=2, lower=0.0, upper=16.0)
+        predictions = np.array([[[-5.0], [0.0], [6.0]]])  # Original: -2, 8, 20
+        accumulator.update(predictions, np.zeros_like(predictions), np.ones_like(predictions, dtype=bool))
+        result = accumulator.result()
+        self.assertEqual(result["range_audit"]["below_count"], 1)
+        self.assertEqual(result["range_audit"]["above_count"], 1)
+        self.assertAlmostEqual(result["standardized"]["near_mse"], 12.5)
+        self.assertAlmostEqual(result["standardized"]["far_mse"], 36.0)
+        bounded = constrain_original(np.array([-2.0, 8.0, 20.0]), Config(output_constraint="bounded"))
+        np.testing.assert_array_equal(bounded, [0.0, 8.0, 16.0])
+
     def test_position_only_latent_is_detected_as_cross_sample_constant(self):
         cfg = Config(d_model=8, probe_positions=8)
         temporal_pattern = np.arange(64, dtype=np.float32).reshape(1, 8, 8)

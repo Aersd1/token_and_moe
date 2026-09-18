@@ -1,6 +1,7 @@
 """Configuration shared by training, evaluation and experiment suites."""
 import argparse
 import json
+import math
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
@@ -51,13 +52,20 @@ class Config:
     seasonal_period: int = 0
     plot_channels: int = 3
     plot_windows: int = 3
+    prediction_mode: str = "direct"
+    near_steps: int = 12
+    near_weight: float = 1.0
+    output_constraint: str = "none"
+    output_min: float = 0.0
+    output_max: float = 16.0
+    range_tolerance: float = 0.00001
 
     def validate(self):
         if not self.data:
             raise ValueError("Specify --data /path/to/dataset.csv")
         positive = ("lookback", "horizon", "train_stride", "eval_stride", "d_model",
                     "layers", "epochs", "batch_size", "patience", "monitor_every",
-                    "probe_positions", "diag_batch_size", "plot_channels", "plot_windows")
+                    "probe_positions", "diag_batch_size", "plot_channels", "plot_windows", "near_steps")
         for name in positive:
             if getattr(self, name) < 1:
                 raise ValueError(f"{name} must be >= 1")
@@ -84,6 +92,18 @@ class Config:
             raise ValueError("split must be ratio, ett-hour or ett-minute")
         if self.missing not in {"error", "ffill"}:
             raise ValueError("missing must be error or ffill")
+        if self.prediction_mode not in {"direct", "residual"}:
+            raise ValueError("prediction_mode must be direct or residual")
+        if not math.isfinite(self.near_weight) or self.near_weight <= 0:
+            raise ValueError("near_weight must be positive; 1 means uniform loss")
+        if self.output_constraint not in {"none", "nonnegative", "bounded"}:
+            raise ValueError("output_constraint must be none, nonnegative or bounded")
+        if not all(math.isfinite(v) for v in (self.output_min, self.output_max, self.range_tolerance)):
+            raise ValueError("Output bounds and range_tolerance must be finite")
+        if self.output_constraint == "bounded" and self.output_max <= self.output_min:
+            raise ValueError("output_max must exceed output_min (in original units)")
+        if self.range_tolerance < 0:
+            raise ValueError("range_tolerance cannot be negative")
         if (self.variance_weight or self.covariance_weight) and self.batch_size < 2:
             raise ValueError("Representation regularization requires batch_size >= 2")
         return self

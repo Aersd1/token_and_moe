@@ -1,5 +1,6 @@
 """Chronological windows. Scaling fits training observations only."""
 import warnings
+import hashlib
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -49,6 +50,13 @@ class DataBundle:
 
 def load_data(cfg, fitted=None):
     path = Path(cfg.data).expanduser().resolve()
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(8 * 1024 * 1024), b""):
+            digest.update(chunk)
+    source_sha256 = digest.hexdigest()
+    if fitted is not None and fitted.get("source_sha256") and fitted["source_sha256"] != source_sha256:
+        raise ValueError("Evaluation CSV content differs from the checkpoint's SHA-256 fingerprint")
     frame = pd.read_csv(path, encoding=cfg.encoding, low_memory=False)
     if frame.empty:
         raise ValueError("CSV is empty")
@@ -91,6 +99,16 @@ def load_data(cfg, fitted=None):
             raise ValueError(f"ETT split needs at least {test_end} rows; received {n}")
     raw = raw[:test_end]
     timestamps = timestamps[:test_end]
+    timestamp_audit = {"available": False}
+    if time_column:
+        intervals = dates.iloc[:test_end].diff().dropna().dt.total_seconds()
+        if len(intervals):
+            typical = float(intervals.mode().iloc[0])
+            timestamp_audit = {"available": True, "modal_interval_seconds": typical,
+                               "min_interval_seconds": float(intervals.min()),
+                               "max_interval_seconds": float(intervals.max()),
+                               "different_interval_count": int((intervals != typical).sum()),
+                               "used_first_time": timestamps[0], "used_last_time": timestamps[-1]}
     observed = np.isfinite(raw)
     if cfg.missing == "error" and not observed.all():
         raise ValueError("Missing/inf values found. Clean data or explicitly use --missing ffill")
@@ -127,6 +145,7 @@ def load_data(cfg, fitted=None):
             raise ValueError(f"No usable {name} windows; reduce lookback/horizon or change split")
         datasets[name] = WindowDataset(values, observed, origins, cfg.lookback, cfg.horizon, indices)
     metadata = {"source": str(path), "source_rows": n, "used_rows": test_end,
+                "source_sha256": source_sha256, "timestamp_audit": timestamp_audit,
                 "features": features, "targets": targets, "time_column": time_column,
                 "first_time": timestamps[0], "last_time": timestamps[-1],
                 "train_end": train_end, "val_end": val_end, "test_end": test_end,
@@ -140,7 +159,7 @@ def load_data(cfg, fitted=None):
                       mean, scale, bounds, datasets, metadata)
 
 
-def probe_dataset(bundle, cfg, split="val"):
+def probe_dataset(bundle, cfg, split="val", sampling_seed=None):
     source = bundle.datasets[split]
     spacing = cfg.probe_spacing or cfg.horizon
     chosen = []
@@ -148,7 +167,11 @@ def probe_dataset(bundle, cfg, split="val"):
         if not chosen or origin - chosen[-1] >= spacing:
             chosen.append(int(origin))
     if len(chosen) > cfg.probe_windows:
-        positions = np.linspace(0, len(chosen) - 1, cfg.probe_windows, dtype=int)
+        if sampling_seed is None:
+            positions = np.linspace(0, len(chosen) - 1, cfg.probe_windows, dtype=int)
+        else:
+            rng = np.random.default_rng(sampling_seed)
+            positions = np.sort(rng.choice(len(chosen), cfg.probe_windows, replace=False))
         chosen = np.asarray(chosen)[positions].tolist()
     return WindowDataset(bundle.values, bundle.observed, chosen, cfg.lookback,
                          cfg.horizon, bundle.target_indices)

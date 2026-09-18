@@ -20,6 +20,7 @@ LOCATION_KEYS = {"output", "data", "device", "workers", "tensorboard"}
 
 
 def assert_comparable(saved, requested, allow_regularization=False):
+    saved = asdict(Config(**saved))  # Old checkpoints omit the new opt-in fields.
     ignored = LOCATION_KEYS | (VARIANT_KEYS if allow_regularization else set())
     differences = [key for key, value in asdict(requested).items()
                    if key not in ignored and saved.get(key) != value]

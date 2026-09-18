@@ -36,6 +36,12 @@ def make_figures(state):
                                      mode="lines+markers", name=label))
         fig.update_xaxes(title="Epoch")
         figures.append(("learning_curves", fig))
+        if "val_near_mse" in history[0]:
+            fig = _figure("Near / far validation errors (raw forecasts)", "Standardized MSE")
+            for key, name in (("val_first_step_mse", "First step"), ("val_near_mse", "Near horizon"),
+                              ("val_far_mse", "Far horizon")):
+                fig.add_trace(go.Scatter(x=[r["epoch"] for r in history], y=[r.get(key) for r in history], name=name))
+            figures.append(("near_far_learning", fig))
         auxiliary = _figure("02 / Auxiliary objectives (unweighted)", "Loss")
         for key in ("train_reconstruction", "train_variance", "train_covariance"):
             if any(r.get(key, 0) for r in history):
@@ -92,15 +98,24 @@ def make_figures(state):
         fig.update_xaxes(title="Probe window (chronological)")
         fig.update_yaxes(title="Probe window (chronological)")
         figures.append(("sample_similarity", fig))
+        if "centered_pooled_cosine" in stats:
+            fig = _figure(f"Centered window-mean cosine · {label}")
+            fig.add_trace(go.Heatmap(z=stats["centered_pooled_cosine"], zmin=-1, zmax=1, colorscale="RdBu"))
+            figures.append(("centered_similarity", fig))
     ablations = diag.get("ablations", {})
     if ablations:
         fig = _figure(f"09 / Latent interventions · {label}", "Standardized MSE (lower is better)")
         names = list(ablations)
         fig.add_trace(go.Bar(x=names, y=[ablations[k]["standardized"]["mse"] for k in names],
-                             marker_color=COLORS[:len(names)],
+                             marker_color=[COLORS[i % len(COLORS)] for i in range(len(names))],
                              customdata=[ablations[k]["delta_mse"] for k in names],
                              hovertemplate="%{x}<br>MSE=%{y:.6f}<br>ΔMSE=%{customdata:.6f}<extra></extra>"))
         figures.append(("interventions", fig))
+        if all("bounded_metrics" in value for value in ablations.values()):
+            fig = _figure(f"Paired raw / bounded interventions · {label}", "Standardized MSE")
+            fig.add_trace(go.Bar(x=names, y=[ablations[k]["standardized"]["mse"] for k in names], name="Raw"))
+            fig.add_trace(go.Bar(x=names, y=[ablations[k]["bounded_metrics"]["standardized"]["mse"] for k in names], name="Bounded"))
+            figures.append(("bounded_interventions", fig))
     evaluation = state.get("evaluation") or {}
     metrics = evaluation.get("metrics", {})
     split = evaluation.get("split", "test")
@@ -116,6 +131,30 @@ def make_figures(state):
             fig.add_trace(go.Scatter(x=list(range(1, len(values) + 1)), y=values, name=name))
         fig.update_xaxes(title="Forecast lead (rows)")
         figures.append(("horizon_error", fig))
+        if "first_step_mse" in metrics["model"]["standardized"]:
+            fig = _figure(f"Near / far forecast quality · full {split}", "Standardized MSE")
+            for name, result in metrics.items():
+                values = result["standardized"]
+                fig.add_trace(go.Bar(x=["First step", f"First {result['near_steps']} steps", "Remaining steps"],
+                                     y=[values["first_step_mse"], values["near_mse"], values["far_mse"]], name=name))
+            figures.append(("near_far_quality", fig))
+        if "last_value" in metrics:
+            reference = np.asarray(metrics["last_value"]["standardized"]["horizon_mse"], dtype=float)
+            fig = _figure(f"Lead-wise error relative to persistence · full {split}", "MSE / persistence MSE")
+            for name in ("model", "model_bounded"):
+                if name in metrics:
+                    values = np.asarray(metrics[name]["standardized"]["horizon_mse"], dtype=float)
+                    ratios = np.divide(values, reference, out=np.full_like(values, np.nan), where=reference > 1e-12)
+                    fig.add_trace(go.Scatter(x=list(range(1, len(values) + 1)), y=ratios, name=name))
+            fig.add_hline(y=1.0, line_dash="dash")
+            figures.append(("persistence_skill_by_lead", fig))
+        audited = {name: result["range_audit"] for name, result in metrics.items()
+                   if result.get("range_audit", {}).get("lower") is not None}
+        if audited:
+            fig = _figure(f"Physical range violations · all forecast cells · full {split}", "Percent")
+            fig.add_trace(go.Bar(x=list(audited), y=[100 * r["below_fraction"] for r in audited.values()], name="Below lower bound"))
+            fig.add_trace(go.Bar(x=list(audited), y=[100 * (r["above_fraction"] or 0) for r in audited.values()], name="Above upper bound"))
+            figures.append(("range_violations", fig))
         values = np.array(metrics["model"]["standardized"]["channel_mse"], dtype=float)
         valid_indices = np.flatnonzero(np.isfinite(values))
         selected = valid_indices[np.argsort(values[valid_indices])[-min(30, len(valid_indices)):]]
@@ -136,6 +175,9 @@ def make_figures(state):
         ):
             fig.add_trace(go.Scatter(x=xs, y=ys, name=name, line=dict(dash=dash), customdata=times,
                                      hovertemplate="%{customdata}<br>%{y:.5g}<extra>%{fullData.name}</extra>"))
+        if "prediction_bounded" in example:
+            fig.add_trace(go.Scatter(x=list(range(len(example["prediction_bounded"]))),
+                                     y=example["prediction_bounded"], name="Bounded forecast", line=dict(dash="dot")))
         fig.add_vline(x=-0.5, line_dash="dot", line_color="#64748b")
         fig.update_xaxes(title="Row offset from forecast origin")
         figures.append((f"forecast_{i:02d}", fig))
@@ -161,7 +203,11 @@ def render_report(run_dir, export_png=False):
              ("MEAN CROSS-WINDOW STD", format_number(stats.get("mean_std"))),
              ("NEAR-ZERO DIMENSIONS", f"{100 * stats['near_zero_fraction']:.1f}%" if stats.get("available") else "Pending"),
              ("PROBE WINDOWS", str(stats.get("probe_count", "Pending"))),
-             ("HISTORY → FUTURE", f"{cfg['lookback']} → {cfg['horizon']}")]
+             ("HISTORY → FUTURE", f"{cfg['lookback']} → {cfg['horizon']}"),
+             ("PREDICTION MODE", cfg.get("prediction_mode", "direct")),
+             ("FIRST STEP MSE / RAW", format_number(test_result.get("first_step_mse"))),
+             ("NEAR MSE / RAW", format_number(test_result.get("near_mse"))),
+             ("TRAINABLE PARAMETERS", str(state.get("parameter_count", "Not recorded")))]
     card_html = "".join(f'<div class="card"><span>{html.escape(k)}</span><strong>{html.escape(v)}</strong></div>'
                         for k, v in cards)
     sections = []
@@ -180,6 +226,16 @@ def render_report(run_dir, export_png=False):
     默认探针预测区间不重叠，历史窗口可能重叠；相似窗口并非严格独立。</p>
     <p>样本相似、低秩或预测平滑都不等于有害坍缩。标准化指标适合跨量纲汇总，原始量纲指标见 JSON/CSV。
     报告不使用模拟数据；未产生的结果保留为空。测试结果仅在最佳验证检查点选定后计算。</p></section>"""
+    if cfg.get("prediction_mode") == "residual":
+        notes += '''<section class="note"><b>残差模型的诊断</b><p>预测 = 原样本最后观测值 + 编码预测的修正。
+        zero / probe_mean / sample_shuffle / time_shuffle 都保留原样本最后值；zero 仍包含预测头偏置。
+        persistence_only 去掉整个学习修正；context_shuffle 只打乱最后值；joint_shuffle 同时打乱编码和最后值。
+        编码干预影响小可能表示模型依赖持续性分支，不能直接判定坍缩。</p></section>'''
+    if cfg.get("output_constraint", "none") != "none":
+        notes += '''<section class="note"><b>原始输出与物理范围约束</b><p>model 始终是未经约束的原始预测；
+        model_bounded 是同一模型在原始量纲上限制范围后的配对结果。训练和检查点选择使用原始预测，
+        不用范围限制改善后的分数隐藏模型误差。越界比例覆盖完整评估的所有预测实例，不仅是图中示例。
+        原始目标越界数另见 range_audit.csv，请核实容量上限和数据定义。</p></section>'''
     configuration = html.escape(json.dumps({"config": cfg, "data": state.get("data", {}),
                                             "provenance": state.get("provenance", {})},
                                            ensure_ascii=False, indent=2))
@@ -271,7 +327,8 @@ def render_pngs(state, directory):
     if diag.get("ablations"):
         fig, ax = plt.subplots(figsize=(9, 4))
         names = list(diag["ablations"])
-        ax.bar(names, [diag["ablations"][k]["standardized"]["mse"] for k in names], color=COLORS[:len(names)])
+        ax.bar(names, [diag["ablations"][k]["standardized"]["mse"] for k in names],
+               color=[COLORS[i % len(COLORS)] for i in range(len(names))])
         ax.set(title=f"Latent interventions / {diag['split']} / epoch {diag['epoch']}", ylabel="Standardized MSE")
         ax.tick_params(axis="x", rotation=15)
         save(fig, "interventions")
@@ -289,11 +346,30 @@ def render_pngs(state, directory):
         axes[1].set(title="Error by forecast lead", xlabel="Lead (rows)", ylabel="Standardized MSE")
         axes[1].legend()
         save(fig, "forecast_metrics")
+        if "first_step_mse" in metrics["model"]["standardized"]:
+            fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+            positions = np.arange(3)
+            width = 0.8 / len(metrics)
+            for i, (name, result) in enumerate(metrics.items()):
+                values = [result["standardized"].get(key) for key in ("first_step_mse", "near_mse", "far_mse")]
+                axes[0].bar(positions + (i - (len(metrics) - 1) / 2) * width,
+                            [np.nan if v is None else v for v in values], width, label=name)
+                audit = result.get("range_audit", {})
+                if audit.get("below_fraction") is not None:
+                    axes[1].bar(name, 100 * (audit["below_fraction"] + (audit.get("above_fraction") or 0)))
+            axes[0].set_xticks(positions, ["First step", "Near", "Far"])
+            axes[0].set(ylabel="Standardized MSE", title="Near / far prediction")
+            axes[0].legend(fontsize=8)
+            axes[1].set(ylabel="Percent of all forecast cells", title="Outside configured physical range")
+            axes[1].tick_params(axis="x", rotation=20)
+            save(fig, "near_far_and_range")
     for i, example in enumerate(evaluation.get("examples", state.get("examples", []))):
         fig, ax = plt.subplots(figsize=(10, 4))
         ax.plot(np.arange(-len(example["history"]), 0), example["history"], label="History")
         ax.plot(example["truth"], label="Observed future")
         ax.plot(example["prediction"], "--", label="Forecast")
+        if "prediction_bounded" in example:
+            ax.plot(example["prediction_bounded"], ":", label="Bounded forecast")
         ax.axvline(-0.5, color="grey", linestyle=":")
         ax.set(title=f"{example['channel']} / origin {example['origin']}", xlabel="Row offset", ylabel="Original units")
         ax.legend()
